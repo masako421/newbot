@@ -12,96 +12,68 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
 --==============================
--- Window / Tab
+-- Window
 --==============================
 local Window = Rayfield:CreateWindow({
-	Name = "R6 Hitbox + Skeleton",
+	Name = "R15 Visual Assist",
 	LoadingTitle = "Loading",
-	LoadingSubtitle = "Rayfield UI",
+	LoadingSubtitle = "Local Only",
 	ConfigurationSaving = {Enabled = false}
 })
 
 local MainTab = Window:CreateTab("Main")
 
 --==============================
--- Settings
+-- States
 --==============================
 local HITBOX_ON = false
 local SKELETON_ON = false
+local VISUAL_TP = false
+local AIM_LOCK = false
 
-local HITBOX_SIZE = Vector3.new(8,8,8) -- Head拡大サイズ
+--==============================
+-- Settings
+--==============================
+local HITBOX_SIZE = Vector3.new(6,6,6)
 local SKELETON_THICKNESS = 2.5
 local COLOR = Color3.fromRGB(255,0,0)
+local AIM_SMOOTH = 0.15
+local VISUAL_DISTANCE = 6
 
 --==============================
 -- UI
 --==============================
 MainTab:CreateToggle({
-	Name = "Head Hitbox Expand (R6)",
-	CurrentValue = false,
-	Callback = function(v)
-		HITBOX_ON = v
-	end
+	Name = "R15 Head Hitbox",
+	Callback = function(v) HITBOX_ON = v end
 })
 
 MainTab:CreateToggle({
-	Name = "Skeleton ESP (R6)",
-	CurrentValue = false,
-	Callback = function(v)
-		SKELETON_ON = v
-	end
+	Name = "Skeleton ESP (R15)",
+	Callback = function(v) SKELETON_ON = v end
 })
 
---==============================
--- Storage
---==============================
-local HeadBackup = {}
-local Skeletons = {}
+MainTab:CreateToggle({
+	Name = "Visual TP (Local)",
+	Callback = function(v) VISUAL_TP = v end
+})
 
---==============================
--- Drawing helpers
---==============================
-local function NewLine()
-	local l = Drawing.new("Line")
-	l.Color = COLOR
-	l.Thickness = SKELETON_THICKNESS
-	l.Visible = false
-	return l
-end
-
---==============================
--- Skeleton (R6)
---==============================
-local function createSkeleton(plr)
-	Skeletons[plr] = {
-		HT = NewLine(),
-		LA = NewLine(),
-		RA = NewLine(),
-		LL = NewLine(),
-		RL = NewLine()
-	}
-end
-
-local function removeSkeleton(plr)
-	if Skeletons[plr] then
-		for _,l in pairs(Skeletons[plr]) do
-			l:Remove()
-		end
-	end
-	Skeletons[plr] = nil
-end
+MainTab:CreateToggle({
+	Name = "Aim Lock (吸着)",
+	Callback = function(v) AIM_LOCK = v end
+})
 
 --==============================
 -- Hitbox
 --==============================
+local HeadBackup = {}
+
 local function applyHitbox(char)
 	local head = char:FindFirstChild("Head")
 	if not head then return end
-
 	if not HeadBackup[head] then
 		HeadBackup[head] = head.Size
 	end
-
 	head.Size = HITBOX_SIZE
 	head.Transparency = 0.2
 	head.CanCollide = false
@@ -116,79 +88,123 @@ local function restoreHitbox(char)
 end
 
 --==============================
--- Main Loop
+-- Skeleton (Motor6D)
 --==============================
-RunService.RenderStepped:Connect(function()
-	for _,plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer then
-			local char = plr.Character
-			local hum = char and char:FindFirstChildOfClass("Humanoid")
+local Skeletons = {}
 
-			if not char or not hum or hum.Health <= 0 then
-				removeSkeleton(plr)
-				continue
+local function newLine()
+	local l = Drawing.new("Line")
+	l.Color = COLOR
+	l.Thickness = SKELETON_THICKNESS
+	l.Visible = false
+	return l
+end
+
+local function createSkeleton(plr)
+	local t = {}
+	for _,m in ipairs(plr.Character:GetDescendants()) do
+		if m:IsA("Motor6D") and m.Part0 and m.Part1 then
+			t[m] = newLine()
+		end
+	end
+	Skeletons[plr] = t
+end
+
+local function removeSkeleton(plr)
+	if Skeletons[plr] then
+		for _,l in pairs(Skeletons[plr]) do
+			l:Remove()
+		end
+	end
+	Skeletons[plr] = nil
+end
+
+--==============================
+-- Visual TP (Clone)
+--==============================
+local VisualClone
+
+local function updateVisualTP(targetChar)
+	if not VISUAL_TP or not targetChar then
+		if VisualClone then VisualClone:Destroy() VisualClone = nil end
+		return
+	end
+
+	if not VisualClone then
+		VisualClone = targetChar:Clone()
+		for _,v in ipairs(VisualClone:GetDescendants()) do
+			if v:IsA("BasePart") then
+				v.Anchored = true
+				v.CanCollide = false
 			end
+		end
+		VisualClone.Parent = workspace
+	end
 
-			-- R6 Parts
-			local head = char:FindFirstChild("Head")
-			local torso = char:FindFirstChild("Torso")
-			local la = char:FindFirstChild("Left Arm")
-			local ra = char:FindFirstChild("Right Arm")
-			local ll = char:FindFirstChild("Left Leg")
-			local rl = char:FindFirstChild("Right Leg")
+	local cf = Camera.CFrame * CFrame.new(0,0,-VISUAL_DISTANCE)
+	VisualClone:SetPrimaryPartCFrame(cf)
+end
 
-			if not (head and torso and la and ra and ll and rl) then
-				removeSkeleton(plr)
-				continue
-			end
-
-			-- Hitbox
-			if HITBOX_ON then
-				applyHitbox(char)
-			else
-				restoreHitbox(char)
-			end
-
-			-- Skeleton
-			if SKELETON_ON then
-				if not Skeletons[plr] then
-					createSkeleton(plr)
-				end
-
-				local function w2s(p)
-					local v,on = Camera:WorldToViewportPoint(p)
-					return Vector2.new(v.X,v.Y), on
-				end
-
-				local s = Skeletons[plr]
-
-				local function link(line, a, b)
-					local p1,on1 = w2s(a.Position)
-					local p2,on2 = w2s(b.Position)
-					if on1 and on2 then
-						line.From = p1
-						line.To = p2
-						line.Visible = true
-					else
-						line.Visible = false
-					end
-				end
-
-				link(s.HT, head, torso)
-				link(s.LA, torso, la)
-				link(s.RA, torso, ra)
-				link(s.LL, torso, ll)
-				link(s.RL, torso, rl)
-			else
-				removeSkeleton(plr)
+--==============================
+-- Target finder
+--==============================
+local function getTarget()
+	local closest,dist=nil,math.huge
+	for _,p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
+			local d = (Camera.CFrame.Position - p.Character.Head.Position).Magnitude
+			if d < dist then
+				dist = d
+				closest = p
 			end
 		end
 	end
-end)
+	return closest
+end
 
 --==============================
--- Cleanup
+-- Loop
 --==============================
-Players.PlayerRemoving:Connect(function(plr)
-	removeSkeleton(plr)
+RunService.RenderStepped:Connect(function()
+	local target = getTarget()
+	if not target or not target.Character then return end
+
+	-- Hitbox
+	if HITBOX_ON then
+		applyHitbox(target.Character)
+	else
+		restoreHitbox(target.Character)
+	end
+
+	-- Skeleton
+	if SKELETON_ON then
+		if not Skeletons[target] then
+			createSkeleton(target)
+		end
+		for m,l in pairs(Skeletons[target]) do
+			local p1,on1 = Camera:WorldToViewportPoint(m.Part0.Position)
+			local p2,on2 = Camera:WorldToViewportPoint(m.Part1.Position)
+			if on1 and on2 then
+				l.From = Vector2.new(p1.X,p1.Y)
+				l.To   = Vector2.new(p2.X,p2.Y)
+				l.Visible = true
+			else
+				l.Visible = false
+			end
+		end
+	else
+		removeSkeleton(target)
+	end
+
+	-- Visual TP
+	updateVisualTP(target.Character)
+
+	-- Aim Lock
+	if AIM_LOCK then
+		local head = target.Character:FindFirstChild("Head")
+		if head then
+			local cf = CFrame.new(Camera.CFrame.Position, head.Position)
+			Camera.CFrame = Camera.CFrame:Lerp(cf, AIM_SMOOTH)
+		end
+	end
 end)
