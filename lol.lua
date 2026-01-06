@@ -1,7 +1,16 @@
 --==============================
--- Rayfield
+-- Rayfield（UIは最初に作る）
 --==============================
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+local Window = Rayfield:CreateWindow({
+	Name = "R15 Visual Assist",
+	LoadingTitle = "Loading UI",
+	LoadingSubtitle = "Stable Build",
+	ConfigurationSaving = {Enabled = false}
+})
+
+local MainTab = Window:CreateTab("Main")
 
 --==============================
 -- Services
@@ -12,62 +21,59 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
 --==============================
--- Window
---==============================
-local Window = Rayfield:CreateWindow({
-	Name = "R15 Visual Assist",
-	LoadingTitle = "Loading",
-	LoadingSubtitle = "Local Only",
-	ConfigurationSaving = {Enabled = false}
-})
-
-local MainTab = Window:CreateTab("Main")
-
---==============================
 -- States
 --==============================
-local HITBOX_ON = false
+local HITBOX_ON   = false
 local SKELETON_ON = false
-local VISUAL_TP = false
-local AIM_LOCK = false
+local AIM_LOCK    = false
+local VISUAL_TP   = false
 
 --==============================
 -- Settings
 --==============================
 local HITBOX_SIZE = Vector3.new(6,6,6)
-local SKELETON_THICKNESS = 2.5
-local COLOR = Color3.fromRGB(255,0,0)
 local AIM_SMOOTH = 0.15
 local VISUAL_DISTANCE = 6
+local COLOR = Color3.fromRGB(255,0,0)
+local SKELETON_THICKNESS = 2.5
 
 --==============================
--- UI
+-- UI（ここで必ず全部作る）
 --==============================
 MainTab:CreateToggle({
-	Name = "R15 Head Hitbox",
+	Name = "Head Hitbox (R15)",
+	CurrentValue = false,
 	Callback = function(v) HITBOX_ON = v end
 })
 
 MainTab:CreateToggle({
 	Name = "Skeleton ESP (R15)",
+	CurrentValue = false,
 	Callback = function(v) SKELETON_ON = v end
 })
 
 MainTab:CreateToggle({
-	Name = "Visual TP (Local)",
-	Callback = function(v) VISUAL_TP = v end
+	Name = "Aim Assist (吸着)",
+	CurrentValue = false,
+	Callback = function(v) AIM_LOCK = v end
 })
 
 MainTab:CreateToggle({
-	Name = "Aim Lock (吸着)",
-	Callback = function(v) AIM_LOCK = v end
+	Name = "Visual TP (見た目)",
+	CurrentValue = false,
+	Callback = function(v) VISUAL_TP = v end
 })
+
+--==============================
+-- Storage
+--==============================
+local HeadBackup = {}
+local Skeletons = {}
+local VisualClone = nil
 
 --==============================
 -- Hitbox
 --==============================
-local HeadBackup = {}
-
 local function applyHitbox(char)
 	local head = char:FindFirstChild("Head")
 	if not head then return end
@@ -90,8 +96,6 @@ end
 --==============================
 -- Skeleton (Motor6D)
 --==============================
-local Skeletons = {}
-
 local function newLine()
 	local l = Drawing.new("Line")
 	l.Color = COLOR
@@ -120,33 +124,7 @@ local function removeSkeleton(plr)
 end
 
 --==============================
--- Visual TP (Clone)
---==============================
-local VisualClone
-
-local function updateVisualTP(targetChar)
-	if not VISUAL_TP or not targetChar then
-		if VisualClone then VisualClone:Destroy() VisualClone = nil end
-		return
-	end
-
-	if not VisualClone then
-		VisualClone = targetChar:Clone()
-		for _,v in ipairs(VisualClone:GetDescendants()) do
-			if v:IsA("BasePart") then
-				v.Anchored = true
-				v.CanCollide = false
-			end
-		end
-		VisualClone.Parent = workspace
-	end
-
-	local cf = Camera.CFrame * CFrame.new(0,0,-VISUAL_DISTANCE)
-	VisualClone:SetPrimaryPartCFrame(cf)
-end
-
---==============================
--- Target finder
+-- Target
 --==============================
 local function getTarget()
 	local closest,dist=nil,math.huge
@@ -163,24 +141,65 @@ local function getTarget()
 end
 
 --==============================
--- Loop
+-- Visual TP（Clone）
+--==============================
+local function updateVisualTP(char)
+	if not VISUAL_TP or not char then
+		if VisualClone then VisualClone:Destroy() VisualClone = nil end
+		return
+	end
+
+	if not VisualClone then
+		VisualClone = char:Clone()
+		for _,v in ipairs(VisualClone:GetDescendants()) do
+			if v:IsA("BasePart") then
+				v.Anchored = true
+				v.CanCollide = false
+			end
+		end
+		VisualClone.Parent = workspace
+	end
+
+	local cf = Camera.CFrame * CFrame.new(0,0,-VISUAL_DISTANCE)
+	VisualClone:SetPrimaryPartCFrame(cf)
+end
+
+--==============================
+-- 毎秒更新（状態管理）
+--==============================
+task.spawn(function()
+	while true do
+		task.wait(1)
+
+		for _,p in ipairs(Players:GetPlayers()) do
+			if p ~= LocalPlayer and p.Character then
+				if HITBOX_ON then
+					applyHitbox(p.Character)
+				else
+					restoreHitbox(p.Character)
+				end
+
+				if SKELETON_ON then
+					if not Skeletons[p] then
+						createSkeleton(p)
+					end
+				else
+					removeSkeleton(p)
+				end
+			end
+		end
+	end
+end)
+
+--==============================
+-- 描画＆エイム（毎フレーム）
 --==============================
 RunService.RenderStepped:Connect(function()
 	local target = getTarget()
 	if not target or not target.Character then return end
 
-	-- Hitbox
-	if HITBOX_ON then
-		applyHitbox(target.Character)
-	else
-		restoreHitbox(target.Character)
-	end
-
-	-- Skeleton
-	if SKELETON_ON then
-		if not Skeletons[target] then
-			createSkeleton(target)
-		end
+	-- Skeleton描画
+	if SKELETON_ON and Skeletons[target] then
 		for m,l in pairs(Skeletons[target]) do
 			local p1,on1 = Camera:WorldToViewportPoint(m.Part0.Position)
 			local p2,on2 = Camera:WorldToViewportPoint(m.Part1.Position)
@@ -192,14 +211,12 @@ RunService.RenderStepped:Connect(function()
 				l.Visible = false
 			end
 		end
-	else
-		removeSkeleton(target)
 	end
 
 	-- Visual TP
 	updateVisualTP(target.Character)
 
-	-- Aim Lock
+	-- Aim吸着
 	if AIM_LOCK then
 		local head = target.Character:FindFirstChild("Head")
 		if head then
@@ -208,3 +225,8 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 end)
+
+--==============================
+-- キャラリセ対応
+--==============================
+Players.PlayerRemoving:Connect(removeSkeleton)
