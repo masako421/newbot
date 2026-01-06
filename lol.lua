@@ -1,4 +1,11 @@
+-- ===============================
+-- Rayfield（最初に読み込み）
+-- ===============================
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+-- ===============================
 -- Services
+-- ===============================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
@@ -6,17 +13,22 @@ local Camera = workspace.CurrentCamera
 local LP = Players.LocalPlayer
 local Mouse = LP:GetMouse()
 
--- ===== 機能状態 =====
+-- ===============================
+-- 状態（UIでON/OFF）
+-- ===============================
 local VISUAL_TP = true
-local ESP = true
-local AIMBOT = true
+local ESP_ENABLED = true
+local AIMBOT_ENABLED = true
 
--- ===== Rayfield =====
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+-- 視覚TP距離
+local VISUAL_DISTANCE = 6
 
+-- ===============================
+-- Rayfield UI
+-- ===============================
 local Window = Rayfield:CreateWindow({
-	Name = "Combat UI",
-	LoadingTitle = "Loading",
+	Name = "Combat Assist",
+	LoadingTitle = "Loading...",
 	LoadingSubtitle = "Local Only",
 	ConfigurationSaving = { Enabled = false }
 })
@@ -24,7 +36,6 @@ local Window = Rayfield:CreateWindow({
 local Tab = Window:CreateTab("機能一覧", 4483362458)
 Tab:CreateSection("戦闘補助")
 
--- 視覚TP
 Tab:CreateToggle({
 	Name = "視覚TP",
 	CurrentValue = true,
@@ -33,25 +44,36 @@ Tab:CreateToggle({
 	end
 })
 
--- ESP
 Tab:CreateToggle({
 	Name = "ESP（敵表示）",
 	CurrentValue = true,
 	Callback = function(v)
-		ESP = v
+		ESP_ENABLED = v
 	end
 })
 
--- エイムボット
 Tab:CreateToggle({
 	Name = "エイムボット",
 	CurrentValue = true,
 	Callback = function(v)
-		AIMBOT = v
+		AIMBOT_ENABLED = v
 	end
 })
 
--- ===== ESP =====
+Tab:CreateSlider({
+	Name = "視覚TP 距離",
+	Range = {3, 10},
+	Increment = 1,
+	Suffix = "studs",
+	CurrentValue = VISUAL_DISTANCE,
+	Callback = function(v)
+		VISUAL_DISTANCE = v
+	end
+})
+
+-- ===============================
+-- ESP（Drawing）
+-- ===============================
 local ESP_CACHE = {}
 
 local function isEnemy(plr)
@@ -62,13 +84,16 @@ end
 
 local function createESP(plr)
 	local box = Drawing.new("Square")
-	box.Color = Color3.fromRGB(0,255,0)
+	box.Color = Color3.fromRGB(180, 0, 255) -- 紫系
 	box.Thickness = 2
 	box.Filled = false
+	box.Visible = false
 	ESP_CACHE[plr] = box
 end
 
--- ===== 共通 =====
+-- ===============================
+-- ターゲット取得
+-- ===============================
 local function getClosestEnemy()
 	local closest, dist = nil, math.huge
 	for _,plr in pairs(Players:GetPlayers()) do
@@ -86,19 +111,22 @@ local function getClosestEnemy()
 	return closest
 end
 
--- ===== メイン処理 =====
+-- ===============================
+-- メインループ
+-- ===============================
 RunService.RenderStepped:Connect(function()
-	-- ESP
+	-- ESP更新
 	for _,plr in pairs(Players:GetPlayers()) do
 		if isEnemy(plr) then
 			if not ESP_CACHE[plr] then
 				createESP(plr)
 			end
+
 			local hrp = plr.Character.HumanoidRootPart
 			local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
 			local box = ESP_CACHE[plr]
 
-			if ESP and onScreen then
+			if ESP_ENABLED and onScreen then
 				box.Visible = true
 				box.Size = Vector2.new(40, 60)
 				box.Position = Vector2.new(pos.X - 20, pos.Y - 30)
@@ -111,8 +139,8 @@ RunService.RenderStepped:Connect(function()
 	local target = getClosestEnemy()
 	if not target or not target.Character then return end
 
-	-- エイムボット
-	if AIMBOT and target.Character:FindFirstChild("Head") then
+	-- エイムボット（カメラ向け）
+	if AIMBOT_ENABLED and target.Character:FindFirstChild("Head") then
 		Camera.CFrame = CFrame.new(
 			Camera.CFrame.Position,
 			target.Character.Head.Position
@@ -121,7 +149,7 @@ RunService.RenderStepped:Connect(function()
 
 	-- 視覚TP（見た目のみ）
 	if VISUAL_TP and target.Character:FindFirstChild("HumanoidRootPart") then
-		local front = Camera.CFrame.Position + Camera.CFrame.LookVector * 6
+		local front = Camera.CFrame.Position + Camera.CFrame.LookVector * VISUAL_DISTANCE
 		target.Character.HumanoidRootPart.CFrame = CFrame.new(front)
 	end
 end)
