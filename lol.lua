@@ -1,155 +1,141 @@
--- ===============================
--- Rayfield（最初に読み込み）
--- ===============================
+--==============================
+-- Rayfield
+--==============================
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
--- ===============================
--- Services
--- ===============================
 local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
 
-local LP = Players.LocalPlayer
-local Mouse = LP:GetMouse()
-
--- ===============================
--- 状態（UIでON/OFF）
--- ===============================
-local VISUAL_TP = true
-local ESP_ENABLED = true
-local AIMBOT_ENABLED = true
-
--- 視覚TP距離
-local VISUAL_DISTANCE = 6
-
--- ===============================
--- Rayfield UI
--- ===============================
+--==============================
+-- Window
+--==============================
 local Window = Rayfield:CreateWindow({
-	Name = "Combat Assist",
-	LoadingTitle = "Loading...",
-	LoadingSubtitle = "Local Only",
-	ConfigurationSaving = { Enabled = false }
+	Name = "Test Assist UI",
+	LoadingTitle = "Loading",
+	LoadingSubtitle = "UI Only",
+	ConfigurationSaving = {Enabled = false}
 })
 
-local Tab = Window:CreateTab("機能一覧", 4483362458)
-Tab:CreateSection("戦闘補助")
+--==============================
+-- Tab
+--==============================
+local MainTab = Window:CreateTab("Main")
 
-Tab:CreateToggle({
+--==============================
+-- States
+--==============================
+local VisualTP = false
+local HeadExpand = false
+local ESPEnabled = false
+local AimBot = false
+local ShowFOV = true
+local FOVSize = 80
+
+--==============================
+-- UI
+--==============================
+MainTab:CreateToggle({
 	Name = "視覚TP",
-	CurrentValue = true,
-	Callback = function(v)
-		VISUAL_TP = v
-	end
+	Callback = function(v) VisualTP = v end
 })
 
-Tab:CreateToggle({
+MainTab:CreateToggle({
+	Name = "ヘッド判定拡大",
+	Callback = function(v) HeadExpand = v end
+})
+
+MainTab:CreateToggle({
 	Name = "ESP（敵表示）",
-	CurrentValue = true,
-	Callback = function(v)
-		ESP_ENABLED = v
-	end
+	Callback = function(v) ESPEnabled = v end
 })
 
-Tab:CreateToggle({
+MainTab:CreateToggle({
 	Name = "エイムボット",
+	Callback = function(v) AimBot = v end
+})
+
+MainTab:CreateToggle({
+	Name = "FOV表示",
 	CurrentValue = true,
-	Callback = function(v)
-		AIMBOT_ENABLED = v
-	end
+	Callback = function(v) ShowFOV = v end
 })
 
-Tab:CreateSlider({
-	Name = "視覚TP 距離",
-	Range = {3, 10},
+MainTab:CreateSlider({
+	Name = "FOVサイズ",
+	Range = {20,120},
 	Increment = 1,
-	Suffix = "studs",
-	CurrentValue = VISUAL_DISTANCE,
-	Callback = function(v)
-		VISUAL_DISTANCE = v
-	end
+	CurrentValue = FOVSize,
+	Callback = function(v) FOVSize = v end
 })
 
--- ===============================
--- ESP（Drawing）
--- ===============================
-local ESP_CACHE = {}
+--==============================
+-- Drawing UI
+--==============================
+local FOV = Drawing.new("Circle")
+FOV.Filled = false
+FOV.Thickness = 2
+FOV.Color = Color3.fromRGB(170, 0, 255)
 
-local function isEnemy(plr)
-	return plr ~= LP
-		and plr.Character
-		and plr.Character:FindFirstChild("HumanoidRootPart")
+local CrosshairH = Drawing.new("Line")
+local CrosshairV = Drawing.new("Line")
+
+for _,v in pairs({CrosshairH, CrosshairV}) do
+	v.Thickness = 2
+	v.Color = Color3.new(1,1,1)
 end
 
-local function createESP(plr)
-	local box = Drawing.new("Square")
-	box.Color = Color3.fromRGB(180, 0, 255) -- 紫系
-	box.Thickness = 2
-	box.Filled = false
-	box.Visible = false
-	ESP_CACHE[plr] = box
-end
+--==============================
+-- Status Text
+--==============================
+local Status = Drawing.new("Text")
+Status.Size = 18
+Status.Color = Color3.fromRGB(255, 200, 0)
+Status.Outline = true
+Status.Position = Vector2.new(20, 200)
 
--- ===============================
--- ターゲット取得
--- ===============================
-local function getClosestEnemy()
-	local closest, dist = nil, math.huge
-	for _,plr in pairs(Players:GetPlayers()) do
-		if isEnemy(plr) and plr.Character:FindFirstChild("Head") then
-			local pos, onScreen = Camera:WorldToViewportPoint(plr.Character.Head.Position)
-			if onScreen then
-				local m = (Vector2.new(pos.X,pos.Y) - Vector2.new(Mouse.X,Mouse.Y)).Magnitude
-				if m < dist then
-					dist = m
-					closest = plr
-				end
-			end
-		end
-	end
-	return closest
-end
-
--- ===============================
--- メインループ
--- ===============================
+--==============================
+-- Render
+--==============================
 RunService.RenderStepped:Connect(function()
-	-- ESP更新
-	for _,plr in pairs(Players:GetPlayers()) do
-		if isEnemy(plr) then
-			if not ESP_CACHE[plr] then
-				createESP(plr)
-			end
+	local center = Vector2.new(
+		Camera.ViewportSize.X/2,
+		Camera.ViewportSize.Y/2
+	)
 
-			local hrp = plr.Character.HumanoidRootPart
-			local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-			local box = ESP_CACHE[plr]
+	-- FOV
+	FOV.Visible = ShowFOV
+	FOV.Position = center
+	FOV.Radius = FOVSize
 
-			if ESP_ENABLED and onScreen then
-				box.Visible = true
-				box.Size = Vector2.new(40, 60)
-				box.Position = Vector2.new(pos.X - 20, pos.Y - 30)
-			else
-				box.Visible = false
-			end
-		end
-	end
+	-- Crosshair
+	CrosshairH.From = center - Vector2.new(6,0)
+	CrosshairH.To   = center + Vector2.new(6,0)
+	CrosshairV.From = center - Vector2.new(0,6)
+	CrosshairV.To   = center + Vector2.new(0,6)
 
-	local target = getClosestEnemy()
-	if not target or not target.Character then return end
+	CrosshairH.Visible = true
+	CrosshairV.Visible = true
 
-	-- エイムボット（カメラ向け）
-	if AIMBOT_ENABLED and target.Character:FindFirstChild("Head") then
-		Camera.CFrame = CFrame.new(
-			Camera.CFrame.Position,
-			target.Character.Head.Position
-		)
-	end
+	-- Status
+	Status.Text =
+		"【機能一覧】\n" ..
+		"視覚TP : " .. (VisualTP and "ON" or "OFF") .. "\n" ..
+		"ヘッド判定拡大 : " .. (HeadExpand and "ON" or "OFF") .. "\n" ..
+		"ESP（敵表示） : " .. (ESPEnabled and "ON" or "OFF") .. "\n" ..
+		"エイムボット : " .. (AimBot and "ON" or "OFF")
 
-	-- 視覚TP（見た目のみ）
-	if VISUAL_TP and target.Character:FindFirstChild("HumanoidRootPart") then
-		local front = Camera.CFrame.Position + Camera.CFrame.LookVector * VISUAL_DISTANCE
-		target.Character.HumanoidRootPart.CFrame = CFrame.new(front)
+	Status.Visible = true
+end)
+
+--==============================
+-- UI Toggle Key
+--==============================
+UIS.InputBegan:Connect(function(i,gp)
+	if gp then return end
+	if i.KeyCode == Enum.KeyCode.Q then
+		Rayfield:Toggle()
 	end
 end)
