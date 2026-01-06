@@ -31,36 +31,32 @@ local VISUAL_TP   = false
 --==============================
 -- Settings
 --==============================
-local HITBOX_SIZE = Vector3.new(6,6,6)
+local HITBOX_SIZE = Vector3.new(9,9,9) -- ★ デカくした
 local AIM_SMOOTH = 0.15
 local VISUAL_DISTANCE = 6
 local COLOR = Color3.fromRGB(255,0,0)
 local SKELETON_THICKNESS = 2.5
 
 --==============================
--- UI（ここで必ず全部作る）
+-- UI
 --==============================
 MainTab:CreateToggle({
 	Name = "Head Hitbox (R15)",
-	CurrentValue = false,
 	Callback = function(v) HITBOX_ON = v end
 })
 
 MainTab:CreateToggle({
 	Name = "Skeleton ESP (R15)",
-	CurrentValue = false,
 	Callback = function(v) SKELETON_ON = v end
 })
 
 MainTab:CreateToggle({
-	Name = "Aim Assist (吸着)",
-	CurrentValue = false,
+	Name = "Aim Assist",
 	Callback = function(v) AIM_LOCK = v end
 })
 
 MainTab:CreateToggle({
-	Name = "Visual TP (見た目)",
-	CurrentValue = false,
+	Name = "Visual TP",
 	Callback = function(v) VISUAL_TP = v end
 })
 
@@ -72,29 +68,37 @@ local Skeletons = {}
 local VisualClone = nil
 
 --==============================
--- Hitbox
+-- Hitbox（R15安定版）
 --==============================
 local function applyHitbox(char)
 	local head = char:FindFirstChild("Head")
 	if not head then return end
+
 	if not HeadBackup[head] then
-		HeadBackup[head] = head.Size
+		HeadBackup[head] = {
+			Size = head.Size,
+			Transparency = head.Transparency
+		}
 	end
+
+	-- 強制適用（毎回）
 	head.Size = HITBOX_SIZE
-	head.Transparency = 0.2
+	head.Transparency = 0.25
 	head.CanCollide = false
 end
 
 local function restoreHitbox(char)
 	local head = char:FindFirstChild("Head")
-	if head and HeadBackup[head] then
-		head.Size = HeadBackup[head]
+	local data = head and HeadBackup[head]
+	if head and data then
+		head.Size = data.Size
+		head.Transparency = data.Transparency
 		HeadBackup[head] = nil
 	end
 end
 
 --==============================
--- Skeleton (Motor6D)
+-- Skeleton
 --==============================
 local function newLine()
 	local l = Drawing.new("Line")
@@ -105,6 +109,7 @@ local function newLine()
 end
 
 local function createSkeleton(plr)
+	if not plr.Character then return end
 	local t = {}
 	for _,m in ipairs(plr.Character:GetDescendants()) do
 		if m:IsA("Motor6D") and m.Part0 and m.Part1 then
@@ -141,11 +146,14 @@ local function getTarget()
 end
 
 --==============================
--- Visual TP（Clone）
+-- Visual TP（Clone安定版）
 --==============================
 local function updateVisualTP(char)
 	if not VISUAL_TP or not char then
-		if VisualClone then VisualClone:Destroy() VisualClone = nil end
+		if VisualClone then
+			VisualClone:Destroy()
+			VisualClone = nil
+		end
 		return
 	end
 
@@ -157,19 +165,22 @@ local function updateVisualTP(char)
 				v.CanCollide = false
 			end
 		end
+		VisualClone.PrimaryPart = VisualClone:FindFirstChild("HumanoidRootPart") or VisualClone:FindFirstChild("Head")
 		VisualClone.Parent = workspace
 	end
 
-	local cf = Camera.CFrame * CFrame.new(0,0,-VISUAL_DISTANCE)
-	VisualClone:SetPrimaryPartCFrame(cf)
+	if VisualClone.PrimaryPart then
+		local cf = Camera.CFrame * CFrame.new(0,0,-VISUAL_DISTANCE)
+		VisualClone:SetPrimaryPartCFrame(cf)
+	end
 end
 
 --==============================
--- 毎秒更新（状態管理）
+-- 状態管理（0.3秒）
 --==============================
 task.spawn(function()
 	while true do
-		task.wait(1)
+		task.wait(0.3)
 
 		for _,p in ipairs(Players:GetPlayers()) do
 			if p ~= LocalPlayer and p.Character then
@@ -192,13 +203,13 @@ task.spawn(function()
 end)
 
 --==============================
--- 描画＆エイム（毎フレーム）
+-- 描画 & Aim
 --==============================
 RunService.RenderStepped:Connect(function()
 	local target = getTarget()
 	if not target or not target.Character then return end
 
-	-- Skeleton描画
+	-- Skeleton
 	if SKELETON_ON and Skeletons[target] then
 		for m,l in pairs(Skeletons[target]) do
 			local p1,on1 = Camera:WorldToViewportPoint(m.Part0.Position)
@@ -216,7 +227,7 @@ RunService.RenderStepped:Connect(function()
 	-- Visual TP
 	updateVisualTP(target.Character)
 
-	-- Aim吸着
+	-- Aim Assist
 	if AIM_LOCK then
 		local head = target.Character:FindFirstChild("Head")
 		if head then
@@ -227,6 +238,6 @@ RunService.RenderStepped:Connect(function()
 end)
 
 --==============================
--- キャラリセ対応
+-- Cleanup
 --==============================
 Players.PlayerRemoving:Connect(removeSkeleton)
